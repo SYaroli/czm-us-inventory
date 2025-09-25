@@ -9,9 +9,14 @@
     :root{--bg:#0e0f12;--panel:#14151a;--card:#17181d;--ink:#e9e9ee;--muted:#a2a6b3;--accent:#d71b2b;--line:#23242a;--good:#37c978;--bad:#ff6b6b;}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
-    .top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+    .top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
     .brand{display:flex;align-items:center;gap:10px}
-    .brand img{height:36px;width:auto;object-fit:contain;display:block}
+    .brand img{
+      height:36px;
+      width:auto;
+      object-fit:contain;
+      display:block;
+    }
     .brand h1{font-size:18px;margin:0}
     .actions{display:flex;align-items:center;gap:10px}
     .badge{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
@@ -41,6 +46,7 @@
     </div>
     <div class="actions">
       <span id="hello" class="badge"></span>
+      <button class="pill" id="exportCsv">Export CSV</button>
       <button class="pill" id="signout">Sign out</button>
     </div>
   </header>
@@ -71,90 +77,91 @@
     // Session check
     let session=null; try{session=JSON.parse(localStorage.getItem('czm_session')||'null')}catch{}
     if(!session||!session.username){document.body.innerHTML='<div class="noauth"><p class="muted">Not signed in.</p><p><a href="index.html" class="pill" style="text-decoration:none;padding:8px 12px;">Go to sign in</a></p></div>';throw new Error('unauth')}
-    document.getElementById('hello').textContent=(session.name||session.username)+(session.role?(' • '+session.role):'');
+    document.getElementById('hello').textContent=(session.name||session.username)+(session.role?` • ${session.role}`:"");
     document.getElementById('signout').onclick=()=>{localStorage.removeItem('czm_session');location.href='index.html';};
   </script>
 
   <script src="catalog.js"></script>
   <script>
     const raw = (typeof CATALOG!=='undefined')?CATALOG:[];
-    const data = raw.map(function(r){
+    const data = raw.map(normalizeRecord);
+
+    function normalizeRecord(r){
       return {
         "Item": String(r["Item"]||""),
         "Description": String(r["Description"]||""),
         "Qty On Hand": Number(r["Qty On Hand"]||0),
         "Warehouse": String(r["Warehouse"]||"")
       };
-    });
-
-    const qs = function(id){ return document.getElementById(id); };
-    const unique = function(a){ return Array.from(new Set(a.filter(Boolean))).sort(function(x,y){return x.localeCompare(y);}); };
-    const sum = function(arr,k){ var t=0; for(var i=0;i<arr.length;i++){ t+= (+arr[i][k]||0);} return t; };
-
-    // Build warehouse list
-    var whs = unique(data.map(function(x){ return x["Warehouse"]; }));
-    for(var i=0;i<whs.length;i++){ qs('wh').insertAdjacentHTML('beforeend','<option>'+escapeHtml(whs[i])+'</option>'); }
-
-    var sortKey = "Item", sortDir = 1;
-
-    qs('q').addEventListener('input', render);
-    qs('wh').addEventListener('change', render);
-    Array.prototype.forEach.call(document.querySelectorAll('th[data-sort]'), function(th){
-      th.addEventListener('click', function(){
-        var k = th.getAttribute('data-sort');
-        if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
-        render();
-      });
-    });
-
-    function normalize(s){
-      return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
     }
 
+    const qs=id=>document.getElementById(id);
+    const unique=a=>[...new Set(a.filter(Boolean))].sort((x,y)=>x.localeCompare(y));
+    const sum=(arr,k)=>arr.reduce((t,x)=>t+(+x[k]||0),0);
+    const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+    // Build warehouse list
+    for(const w of unique(data.map(x=>x["Warehouse"]))) qs('wh').insertAdjacentHTML('beforeend', `<option>${esc(w)}</option>`);
+
+    let sortKey="Item", sortDir=1;
+    qs('q').addEventListener('input', render);
+    qs('wh').addEventListener('change', render);
+    document.querySelectorAll('th[data-sort]').forEach(th=>{
+      th.addEventListener('click',()=>{const k=th.getAttribute('data-sort'); if(sortKey===k) sortDir*=-1; else{sortKey=k;sortDir=1;} render();});
+    });
+
+    function norm(s){
+      return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    }
     function matches(qn, item, desc){
       if(!qn) return true;
-      var i = normalize(item), d = normalize(desc);
-      if (i.indexOf(qn) !== -1 || d.indexOf(qn) !== -1) return true;
-      var q2 = qn.replace(/0+$/,'');
-      if(q2 && (i.indexOf(q2)!==-1 || d.indexOf(q2)!==-1)) return true;
+      const i = norm(item), d = norm(desc);
+      if(i.includes(qn) || d.includes(qn)) return true;
+      const q2 = qn.replace(/0+$/,""); // allow extra trailing zeros
+      if(q2 && (i.includes(q2) || d.includes(q2))) return true;
       return false;
     }
 
     function render(){
-      var qRaw = qs('q').value;
-      var fwh = qs('wh').value;
-      var qn = normalize(qRaw.trim());
+      const qRaw = qs('q').value;
+      const fwh = qs('wh').value;
+      const qn = norm(qRaw.trim());
 
-      var rows = data.filter(function(r){
+      let rows=data.filter(r=>{
         if(qn && !matches(qn, r["Item"], r["Description"])) return false;
-        if(fwh && r["Warehouse"] !== fwh) return false;
+        if(fwh && r["Warehouse"]!==fwh) return false;
         return true;
       });
 
-      rows.sort(function(a,b){
-        if (sortKey === "Qty On Hand") return (a[sortKey]-b[sortKey]) * sortDir;
-        return String(a[sortKey]).localeCompare(String(b[sortKey])) * sortDir;
-      });
+      rows.sort((a,b)=> sortKey==="Qty On Hand" ? (a[sortKey]-b[sortKey])*sortDir : String(a[sortKey]).localeCompare(String(b[sortKey]))*sortDir);
 
-      qs('summary').innerHTML =
-        '<span class="badge">Items: '+rows.length.toLocaleString()+'</span>' +
-        '<span class="badge">Total Qty: '+sum(rows,"Qty On Hand").toLocaleString()+'</span>' +
-        (fwh ? '<span class="badge">Warehouse: '+escapeHtml(fwh)+'</span>' : '');
+      // Summary
+      qs('summary').innerHTML = `
+        <span class="badge">Items: ${rows.length.toLocaleString()}</span>
+        <span class="badge">Total Qty: ${sum(rows,"Qty On Hand").toLocaleString()}</span>
+        ${fwh? `<span class="badge">Warehouse: ${esc(fwh)}</span>`:""}
+      `;
 
-      var tb = document.querySelector('#grid tbody');
-      tb.innerHTML = rows.map(function(r){
-        var qty = r["Qty On Hand"];
-        var cls = qty>0?'pos':qty<0?'neg':'zero';
-        var link = 'item.html?item='+encodeURIComponent(r["Item"]);
-        return '<tr>' +
-          '<td><a class="item" href="'+link+'"><code>'+escapeHtml(r["Item"])+'</code></a></td>' +
-          '<td><a class="item" href="'+link+'">'+escapeHtml(r["Description"])+'</a></td>' +
-          '<td class="right qty '+cls+'">'+qty.toLocaleString()+'</td>' +
-          '</tr>';
+      // Rows
+      const tb=document.querySelector('#grid tbody');
+      tb.innerHTML = rows.map(r=>{
+        const qty=r["Qty On Hand"]; const cls=qty>0?'pos':qty<0?'neg':'zero';
+        const link=`item.html?item=${encodeURIComponent(r["Item"])}`;
+        return `
+          <tr>
+            <td><a class="item" href="${link}"><code>${esc(r["Item"])}</code></a></td>
+            <td><a class="item" href="${link}">${esc(r["Description"])}</a></td>
+            <td class="right qty ${cls}">${qty.toLocaleString()}</td>
+          </tr>
+        `;
       }).join('');
     }
 
-    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    // Button exists now; wiring export comes next step.
+    document.getElementById('exportCsv').addEventListener('click', ()=> {
+      alert('Export CSV will be enabled next step.');
+    });
+
     render();
   </script>
 </body>
