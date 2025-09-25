@@ -11,7 +11,7 @@
     body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
     header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
     .brand{display:flex;align-items:center;gap:10px}
-    .brand img{width:36px;height:36px}
+    .brand img{height:36px;width:auto;object-fit:contain;display:block}
     .brand h1{font-size:18px;margin:0}
     .actions{display:flex;gap:10px}
     .pill{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;text-decoration:none}
@@ -71,7 +71,7 @@
       <div style="height:12px"></div>
       <h2>QR Code</h2>
       <div class="qrbox" id="qr">QR will go here</div>
-      <p class="note">This will encode the URL of this item page so you can slap a sticker on a bin. We’ll wire the generator in the next pass.</p>
+      <p class="note">This encodes the URL of this item’s page for scanning and label printing.</p>
     </section>
 
     <!-- Left bottom: Locations -->
@@ -95,12 +95,16 @@
     </section>
   </main>
 
+  <!-- QR library (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <!-- Data -->
   <script src="catalog.js"></script>
+
   <script>
     // Session
     let sess=null; try{sess=JSON.parse(localStorage.getItem('czm_session')||'null')}catch{}
     if(!sess||!sess.username){location.href='index.html';}
-
     document.getElementById('signout').onclick=()=>{localStorage.removeItem('czm_session');location.href='index.html';};
 
     // Parse item id from URL
@@ -116,7 +120,7 @@
     // Title
     document.getElementById('title').textContent = rec["Item"];
 
-    // Normalize and render details
+    // Render details
     const det = document.getElementById('details');
     const fields = ["Item","Description","Location","Warehouse","Product Code","Qty On Hand","Stocked","S/N Track","Non-Nettable","VendorName"];
     det.innerHTML = fields.map(k=>`<tr><th style="width:180px" class="muted">${k}</th><td>${esc(rec[k]??"")}</td></tr>`).join("");
@@ -177,7 +181,7 @@
     }
     renderLog();
 
-    // Locations list (local, multi-spot)
+    // Locations list (local)
     function getLocs(){ try{return JSON.parse(localStorage.getItem(locKey)||"[]")}catch{return []} }
     function setLocs(a){ localStorage.setItem(locKey, JSON.stringify(a)); }
     function renderLocs(){
@@ -202,9 +206,18 @@
       renderLocs();
     });
 
-    // QR placeholder: encode this page's URL for later generator hookup
-    const itemUrl = location.origin + location.pathname.replace(/item\.html$/,'item.html') + '?item=' + encodeURIComponent(rec["Item"]);
-    document.getElementById('qr').setAttribute('data-url', itemUrl);
+    // Build absolute URL and render QR (works on Render and local servers)
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    const itemUrl = base + 'item.html?item=' + encodeURIComponent(rec["Item"]);
+    const qrNode = document.getElementById('qr');
+    qrNode.innerHTML = '';
+    new QRCode(qrNode, {
+      text: itemUrl,
+      width: 220,
+      height: 220,
+      correctLevel: QRCode.CorrectLevel.M,
+      margin: 2
+    });
 
     function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
   </script>
