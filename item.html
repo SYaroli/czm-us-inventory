@@ -25,6 +25,8 @@
     .btn{border:0;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;background:#272830;color:#fff}
     .btn.primary{background:var(--accent)}
     input,select,textarea{width:100%;padding:10px;background:#111218;border:1px solid var(--line);border-radius:10px;color:var(--ink)}
+    textarea{min-height:72px;resize:vertical}
+    .invalid{border-color:var(--bad)!important;box-shadow:0 0 0 3px rgba(255,107,107,.15)}
     table{width:100%;border-collapse:separate;border-spacing:0}
     th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:top}
     ul.tags{display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:8px 0 0 0;list-style:none}
@@ -67,6 +69,10 @@
       <div class="grid" style="margin-top:10px">
         <input id="customDelta" placeholder="e.g. 12 or -3"/>
         <button class="btn primary" id="applyCustom">Apply</button>
+      </div>
+      <div style="margin-top:10px">
+        <label class="muted" for="adjNote">Reason/Note (required)</label>
+        <textarea id="adjNote" placeholder="Why is the quantity changing?"></textarea>
       </div>
       <div style="height:12px"></div>
       <h2>QR Code</h2>
@@ -144,28 +150,48 @@
     }
     updateQty();
 
+    // Require a note for all adjustments
+    const noteEl = document.getElementById('adjNote');
+    function requireNote(){
+      const n = (noteEl.value || "").trim();
+      if(!n){
+        noteEl.classList.add('invalid');
+        noteEl.focus();
+        setTimeout(()=>noteEl.classList.remove('invalid'), 800);
+        return null;
+      }
+      return n;
+    }
+
     // Quick delta buttons
     document.querySelectorAll('[data-delta]').forEach(b=>{
-      b.addEventListener('click', ()=>applyDelta(Number(b.getAttribute('data-delta'))));
+      b.addEventListener('click', ()=>{
+        const note = requireNote(); if(note===null) return;
+        applyDelta(Number(b.getAttribute('data-delta')), note);
+      });
     });
 
+    // Custom delta
     document.getElementById('applyCustom').addEventListener('click', ()=>{
       const raw = document.getElementById('customDelta').value.trim();
       if(!raw) return;
       const d = Number(raw);
       if(!Number.isFinite(d)) return alert('Enter a number like 12 or -3');
-      applyDelta(d);
+      const note = requireNote(); if(note===null) return;
+      applyDelta(d, note);
       document.getElementById('customDelta').value = "";
     });
 
-    function applyDelta(d){
+    function applyDelta(d, note){
       const cur = getAdj();
       setAdj(cur + d);
       const logs = getLog();
-      logs.unshift({ at: new Date().toISOString(), user: sess.username, delta: d, note: "" });
+      logs.unshift({ at: new Date().toISOString(), user: sess.username, delta: d, note: note });
       setLog(logs.slice(0,50));
       renderLog();
       updateQty();
+      // clear note after successful post
+      noteEl.value = "";
     }
 
     function renderLog(){
@@ -219,7 +245,7 @@
       margin: 2
     });
 
-    // Make QR clickable -> opens a print-ready window and prints (no inline <script> in the HTML string)
+    // Clickable QR -> print-ready window
     qrNode.addEventListener('click', () => {
       const dataUrl = getQrDataUrl(qrNode);
       if(!dataUrl){ alert('QR not ready yet.'); return; }
