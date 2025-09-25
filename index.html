@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CZM Inventory — Sign In</title>
+  <link rel="icon" href="czm-logo.png">
+  <style>
+    :root{--bg:#0e0f12;--card:#17181d;--ink:#e9e9ee;--muted:#a2a6b3;--accent:#d71b2b;--line:#23242a;}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;display:grid;place-items:center}
+    .card{width:min(420px,92vw);background:var(--card);border-radius:16px;padding:22px 22px 18px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+    .brand{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+    .brand img{
+  height:32px;          /* slightly smaller so it sits nicely in the card */
+  width:auto;
+  object-fit:contain;
+  display:block;
+}
+    h1{font-size:18px;margin:0}
+    label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+    input{width:100%;padding:10px 12px;background:#111218;border:1px solid var(--line);border-radius:10px;color:var(--ink)}
+    .row{margin-bottom:14px}
+    button{width:100%;border:0;border-radius:999px;background:var(--accent);color:#fff;font-weight:700;padding:11px 14px;margin-top:8px;cursor:pointer}
+    .muted{color:var(--muted);font-size:13px}
+    #err{color:#ff8989;font-size:13px;min-height:1.2em;margin-top:4px}
+    footer{position:fixed;inset:auto 0 10px;display:flex;justify-content:center;font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="brand">
+      <img src="czm-logo.png" alt="CZM">
+      <h1>CZM Inventory</h1>
+    </div>
+    <p class="muted">Sign in to view the catalog.</p>
+
+    <form id="login" autocomplete="off">
+      <div class="row">
+        <label for="u">Username</label>
+        <input id="u" required placeholder="e.g. admin"/>
+      </div>
+      <div class="row">
+        <label for="p">PIN</label>
+        <input id="p" type="password" inputmode="text" placeholder="****" required minlength="1"/>
+      </div>
+      <div id="err"></div>
+      <button type="submit">Sign In</button>
+    </form>
+  </main>
+
+  <footer><span class="muted">Company-wide inventory • minimal login</span></footer>
+
+  <!-- Users store -->
+  <script src="users.js"></script>
+  <script>
+    // Already signed in? Bounce to catalog.
+    try {
+      const sess = JSON.parse(localStorage.getItem('czm_session')||'null');
+      if (sess && sess.username) location.replace('catalog.html');
+    } catch {}
+
+    const form = document.getElementById('login');
+    const err = document.getElementById('err');
+
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      const u = document.getElementById('u').value.trim();
+      const p = document.getElementById('p').value.trim();
+      if (!u || !p) { err.textContent = 'Enter username and PIN.'; return; }
+
+      const hit = (window.lookupUser ? window.lookupUser(u, p) : null);
+      if (!hit) { err.textContent = 'Invalid credentials.'; return; }
+
+      localStorage.setItem('czm_session', JSON.stringify({
+        username: hit.username, role: hit.role || 'user', name: hit.name || hit.username
+      }));
+      location.href = 'catalog.html';
+    });
+  </script>
+</body>
+</html>

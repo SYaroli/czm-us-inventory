@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CZM Inventory — Item</title>
+  <link rel="icon" href="czm-logo.png">
+  <style>
+    :root{--bg:#0e0f12;--panel:#14151a;--card:#17181d;--ink:#e9e9ee;--muted:#a2a6b3;--accent:#d71b2b;--line:#23242a;--good:#37c978;--bad:#ff6b6b;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    header{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:10}
+    .brand{display:flex;align-items:center;gap:10px}
+    .brand img{width:36px;height:36px}
+    .brand h1{font-size:18px;margin:0}
+    .actions{display:flex;gap:10px}
+    .pill{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;text-decoration:none}
+    main{padding:14px;display:grid;gap:14px;grid-template-columns:1.4fr 1fr}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+    h2{margin:0 0 6px 0;font-size:18px}
+    .muted{color:var(--muted);font-size:13px}
+    .qty{font-size:42px;font-weight:800;margin:0}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .btns{display:flex;flex-wrap:wrap;gap:8px}
+    .btn{border:0;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer;background:#272830;color:#fff}
+    .btn.primary{background:var(--accent)}
+    input,select,textarea{width:100%;padding:10px;background:#111218;border:1px solid var(--line);border-radius:10px;color:var(--ink)}
+    table{width:100%;border-collapse:separate;border-spacing:0}
+    th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:top}
+    ul.tags{display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:8px 0 0 0;list-style:none}
+    ul.tags li{border:1px solid var(--line);border-radius:999px;padding:6px 10px;font-size:12px;background:#111218}
+    .qrbox{display:grid;place-items:center;height:220px;background:#111218;border:1px dashed var(--line);border-radius:12px}
+    .note{font-size:12px;color:var(--muted)}
+    @media (max-width: 960px){ main{grid-template-columns:1fr} }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <img src="czm-logo.png" alt="CZM">
+      <h1 id="title">Item</h1>
+    </div>
+    <div class="actions">
+      <a class="pill" href="catalog.html">Back to Catalog</a>
+      <button class="pill" id="signout">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Left: complete info -->
+    <section class="card" id="info">
+      <h2>Details</h2>
+      <table id="details"></table>
+    </section>
+
+    <!-- Right: Quantity + QR -->
+    <section class="card">
+      <h2>Quantity</h2>
+      <p class="muted">Base from catalog + local adjustments</p>
+      <p class="qty" id="qty">0</p>
+      <div class="btns">
+        <button class="btn" data-delta="-5">-5</button>
+        <button class="btn" data-delta="-1">-1</button>
+        <button class="btn" data-delta="+1">+1</button>
+        <button class="btn" data-delta="+5">+5</button>
+      </div>
+      <div class="grid" style="margin-top:10px">
+        <input id="customDelta" placeholder="e.g. 12 or -3"/>
+        <button class="btn primary" id="applyCustom">Apply</button>
+      </div>
+      <div style="height:12px"></div>
+      <h2>QR Code</h2>
+      <div class="qrbox" id="qr">QR will go here</div>
+      <p class="note">This will encode the URL of this item page so you can slap a sticker on a bin. We’ll wire the generator in the next pass.</p>
+    </section>
+
+    <!-- Left bottom: Locations -->
+    <section class="card" style="grid-column: 1 / -1;">
+      <h2>Locations</h2>
+      <p class="muted">Track all storage spots for this item.</p>
+      <div class="grid">
+        <input id="locInput" placeholder="Add location code (e.g., 11D, RACK B-2)"/>
+        <button class="btn primary" id="addLoc">Add</button>
+      </div>
+      <ul class="tags" id="locList"></ul>
+    </section>
+
+    <!-- Left bottom: Recent adjustments -->
+    <section class="card" style="grid-column: 1 / -1;">
+      <h2>Recent Activity</h2>
+      <table id="log">
+        <thead><tr><th>When</th><th>User</th><th>Δ</th><th>Note</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="catalog.js"></script>
+  <script>
+    // Session
+    let sess=null; try{sess=JSON.parse(localStorage.getItem('czm_session')||'null')}catch{}
+    if(!sess||!sess.username){location.href='index.html';}
+
+    document.getElementById('signout').onclick=()=>{localStorage.removeItem('czm_session');location.href='index.html';};
+
+    // Parse item id from URL
+    const params=new URLSearchParams(location.search);
+    const itemKey=params.get('item')?decodeURIComponent(params.get('item')):"";
+    if(!itemKey){document.body.innerHTML="<p style='padding:16px'>Missing item id.</p>";throw new Error("no-item");}
+
+    // Find record
+    const data=(typeof CATALOG!=='undefined')?CATALOG:[];
+    const rec=data.find(r=>String(r["Item"])===itemKey);
+    if(!rec){document.body.innerHTML="<p style='padding:16px'>Item not found.</p>";throw new Error("not-found");}
+
+    // Title
+    document.getElementById('title').textContent = rec["Item"];
+
+    // Normalize and render details
+    const det = document.getElementById('details');
+    const fields = ["Item","Description","Location","Warehouse","Product Code","Qty On Hand","Stocked","S/N Track","Non-Nettable","VendorName"];
+    det.innerHTML = fields.map(k=>`<tr><th style="width:180px" class="muted">${k}</th><td>${esc(rec[k]??"")}</td></tr>`).join("");
+
+    // Quantity with local adjustments
+    const baseQty = Number(rec["Qty On Hand"]||0);
+    const adjKey = `adj:${rec["Item"]}`;
+    const logKey = `log:${rec["Item"]}`;
+    const locKey = `loc:${rec["Item"]}`;
+
+    function getAdj(){ return Number(localStorage.getItem(adjKey)||0); }
+    function setAdj(v){ localStorage.setItem(adjKey, String(v)); }
+    function getLog(){ try{return JSON.parse(localStorage.getItem(logKey)||"[]")}catch{return []} }
+    function setLog(a){ localStorage.setItem(logKey, JSON.stringify(a)); }
+
+    function updateQty(){ 
+      const eff = baseQty + getAdj();
+      const el = document.getElementById('qty');
+      el.textContent = eff.toLocaleString();
+      el.style.color = eff>0?'#37c978':eff<0?'#ff6b6b':'#a2a6b3';
+    }
+    updateQty();
+
+    // Quick delta buttons
+    document.querySelectorAll('[data-delta]').forEach(b=>{
+      b.addEventListener('click', ()=>applyDelta(Number(b.getAttribute('data-delta'))));
+    });
+
+    document.getElementById('applyCustom').addEventListener('click', ()=>{
+      const raw = document.getElementById('customDelta').value.trim();
+      if(!raw) return;
+      const d = Number(raw);
+      if(!Number.isFinite(d)) return alert('Enter a number like 12 or -3');
+      applyDelta(d);
+      document.getElementById('customDelta').value = "";
+    });
+
+    function applyDelta(d){
+      const cur = getAdj();
+      setAdj(cur + d);
+      const logs = getLog();
+      logs.unshift({ at: new Date().toISOString(), user: sess.username, delta: d, note: "" });
+      setLog(logs.slice(0,50));
+      renderLog();
+      updateQty();
+    }
+
+    function renderLog(){
+      const rows = getLog().map(x=>`
+        <tr>
+          <td class="muted">${new Date(x.at).toLocaleString()}</td>
+          <td>${esc(x.user)}</td>
+          <td>${x.delta>0?'+':''}${x.delta}</td>
+          <td>${esc(x.note||"")}</td>
+        </tr>
+      `).join('');
+      document.querySelector('#log tbody').innerHTML = rows || `<tr><td colspan="4" class="muted">No activity yet.</td></tr>`;
+    }
+    renderLog();
+
+    // Locations list (local, multi-spot)
+    function getLocs(){ try{return JSON.parse(localStorage.getItem(locKey)||"[]")}catch{return []} }
+    function setLocs(a){ localStorage.setItem(locKey, JSON.stringify(a)); }
+    function renderLocs(){
+      const list = getLocs();
+      const ul = document.getElementById('locList');
+      ul.innerHTML = list.map((v,i)=>`<li>${esc(v)} <a href="#" data-del="${i}" class="muted" style="margin-left:6px">×</a></li>`).join('');
+      ul.querySelectorAll('[data-del]').forEach(a=>a.addEventListener('click', e=>{
+        e.preventDefault();
+        const i = Number(a.getAttribute('data-del'));
+        const arr = getLocs(); arr.splice(i,1); setLocs(arr); renderLocs();
+      }));
+    }
+    renderLocs();
+
+    document.getElementById('addLoc').addEventListener('click', ()=>{
+      const v = document.getElementById('locInput').value.trim();
+      if(!v) return;
+      const arr = getLocs();
+      if(!arr.includes(v)) arr.push(v);
+      setLocs(arr);
+      document.getElementById('locInput').value = "";
+      renderLocs();
+    });
+
+    // QR placeholder: encode this page's URL for later generator hookup
+    const itemUrl = location.origin + location.pathname.replace(/item\.html$/,'item.html') + '?item=' + encodeURIComponent(rec["Item"]);
+    document.getElementById('qr').setAttribute('data-url', itemUrl);
+
+    function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+  </script>
+</body>
+</html>

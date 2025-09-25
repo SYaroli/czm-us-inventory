@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>CZM Inventory — Catalog</title>
+  <link rel="icon" href="czm-logo.png">
+  <style>
+    :root{--bg:#0e0f12;--panel:#14151a;--card:#17181d;--ink:#e9e9ee;--muted:#a2a6b3;--accent:#d71b2b;--line:#23242a;--good:#37c978;--bad:#ff6b6b;}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+    .top{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+    .brand{display:flex;align-items:center;gap:10px}
+    .brand img{height:36px;width:auto;object-fit:contain;display:block}
+    .brand h1{font-size:18px;margin:0}
+    .actions{display:flex;align-items:center;gap:10px}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;border:1px solid var(--line);font-size:12px;color:var(--muted)}
+    .pill{border:0;background:var(--accent);color:#fff;border-radius:999px;padding:8px 12px;font-weight:700;cursor:pointer}
+    main{padding:14px}
+    .filters{display:grid;grid-template-columns:1.4fr .8fr;gap:8px;margin:12px 0}
+    .summary{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:13px;margin-bottom:8px}
+    table{width:100%;border-collapse:separate;border-spacing:0;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+    th,td{padding:10px;border-bottom:1px solid var(--line);text-align:left;font-size:14px;vertical-align:top}
+    th{white-space:nowrap}
+    td:first-child, td:last-child{white-space:nowrap}
+    tbody tr:hover{background:#1b1c22}
+    .right{text-align:right}
+    .qty{font-weight:800}
+    .qty.pos{color:var(--good)} .qty.neg{color:var(--bad)} .qty.zero{color:var(--muted)}
+    a.item{color:inherit;text-decoration:none}
+    a.item:hover{text-decoration:underline}
+    .muted{color:var(--muted)}
+    .noauth{padding:16px}
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="czm-logo.png" alt="CZM">
+      <h1>CZM Inventory</h1>
+    </div>
+    <div class="actions">
+      <span id="hello" class="badge"></span>
+      <button class="pill" id="signout">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="filters">
+      <input id="q" placeholder="Search Item or Description"/>
+      <select id="wh"><option value="">All Warehouses</option></select>
+    </div>
+
+    <div class="summary" id="summary"></div>
+
+    <table id="grid">
+      <thead>
+        <tr>
+          <th style="width:220px;cursor:pointer" data-sort="Item">Item ▾</th>
+          <th>Description</th>
+          <th class="right" style="width:130px;cursor:pointer" data-sort="Qty On Hand">Qty On Hand ▾</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="muted" style="margin-top:8px">Data loads from <code>catalog.js</code> (Infor CSV export). Click an Item to open its inventory page.</p>
+  </main>
+
+  <script>
+    // Session check
+    let session=null; try{session=JSON.parse(localStorage.getItem('czm_session')||'null')}catch{}
+    if(!session||!session.username){document.body.innerHTML='<div class="noauth"><p class="muted">Not signed in.</p><p><a href="index.html" class="pill" style="text-decoration:none;padding:8px 12px;">Go to sign in</a></p></div>';throw new Error('unauth')}
+    document.getElementById('hello').textContent=(session.name||session.username)+(session.role?(' • '+session.role):'');
+    document.getElementById('signout').onclick=()=>{localStorage.removeItem('czm_session');location.href='index.html';};
+  </script>
+
+  <script src="catalog.js"></script>
+  <script>
+    const raw = (typeof CATALOG!=='undefined')?CATALOG:[];
+    const data = raw.map(function(r){
+      return {
+        "Item": String(r["Item"]||""),
+        "Description": String(r["Description"]||""),
+        "Qty On Hand": Number(r["Qty On Hand"]||0),
+        "Warehouse": String(r["Warehouse"]||"")
+      };
+    });
+
+    const qs = function(id){ return document.getElementById(id); };
+    const unique = function(a){ return Array.from(new Set(a.filter(Boolean))).sort(function(x,y){return x.localeCompare(y);}); };
+    const sum = function(arr,k){ var t=0; for(var i=0;i<arr.length;i++){ t+= (+arr[i][k]||0);} return t; };
+
+    // Build warehouse list
+    var whs = unique(data.map(function(x){ return x["Warehouse"]; }));
+    for(var i=0;i<whs.length;i++){ qs('wh').insertAdjacentHTML('beforeend','<option>'+escapeHtml(whs[i])+'</option>'); }
+
+    var sortKey = "Item", sortDir = 1;
+
+    qs('q').addEventListener('input', render);
+    qs('wh').addEventListener('change', render);
+    Array.prototype.forEach.call(document.querySelectorAll('th[data-sort]'), function(th){
+      th.addEventListener('click', function(){
+        var k = th.getAttribute('data-sort');
+        if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; }
+        render();
+      });
+    });
+
+    function normalize(s){
+      return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    }
+
+    function matches(qn, item, desc){
+      if(!qn) return true;
+      var i = normalize(item), d = normalize(desc);
+      if (i.indexOf(qn) !== -1 || d.indexOf(qn) !== -1) return true;
+      var q2 = qn.replace(/0+$/,'');
+      if(q2 && (i.indexOf(q2)!==-1 || d.indexOf(q2)!==-1)) return true;
+      return false;
+    }
+
+    function render(){
+      var qRaw = qs('q').value;
+      var fwh = qs('wh').value;
+      var qn = normalize(qRaw.trim());
+
+      var rows = data.filter(function(r){
+        if(qn && !matches(qn, r["Item"], r["Description"])) return false;
+        if(fwh && r["Warehouse"] !== fwh) return false;
+        return true;
+      });
+
+      rows.sort(function(a,b){
+        if (sortKey === "Qty On Hand") return (a[sortKey]-b[sortKey]) * sortDir;
+        return String(a[sortKey]).localeCompare(String(b[sortKey])) * sortDir;
+      });
+
+      qs('summary').innerHTML =
+        '<span class="badge">Items: '+rows.length.toLocaleString()+'</span>' +
+        '<span class="badge">Total Qty: '+sum(rows,"Qty On Hand").toLocaleString()+'</span>' +
+        (fwh ? '<span class="badge">Warehouse: '+escapeHtml(fwh)+'</span>' : '');
+
+      var tb = document.querySelector('#grid tbody');
+      tb.innerHTML = rows.map(function(r){
+        var qty = r["Qty On Hand"];
+        var cls = qty>0?'pos':qty<0?'neg':'zero';
+        var link = 'item.html?item='+encodeURIComponent(r["Item"]);
+        return '<tr>' +
+          '<td><a class="item" href="'+link+'"><code>'+escapeHtml(r["Item"])+'</code></a></td>' +
+          '<td><a class="item" href="'+link+'">'+escapeHtml(r["Description"])+'</a></td>' +
+          '<td class="right qty '+cls+'">'+qty.toLocaleString()+'</td>' +
+          '</tr>';
+      }).join('');
+    }
+
+    function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    render();
+  </script>
+</body>
+</html>
