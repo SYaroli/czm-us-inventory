@@ -74,7 +74,7 @@
       <p class="note">Click the QR to open a print-ready label.</p>
     </section>
 
-    <!-- Left bottom: Locations -->
+    <!-- Locations -->
     <section class="card" style="grid-column: 1 / -1;">
       <h2>Locations</h2>
       <p class="muted">Track all storage spots for this item.</p>
@@ -85,7 +85,7 @@
       <ul class="tags" id="locList"></ul>
     </section>
 
-    <!-- Left bottom: Recent adjustments -->
+    <!-- Recent adjustments -->
     <section class="card" style="grid-column: 1 / -1;">
       <h2>Recent Activity</h2>
       <table id="log">
@@ -219,13 +219,12 @@
       margin: 2
     });
 
-    // Make QR clickable -> opens print-ready window and auto-prints
+    // Make QR clickable -> opens a print-ready window and prints (no inline <script> in the HTML string)
     qrNode.addEventListener('click', () => {
       const dataUrl = getQrDataUrl(qrNode);
       if(!dataUrl){ alert('QR not ready yet.'); return; }
       const labelText = esc(rec["Item"]) + " — " + esc(String(rec["Description"]||"").slice(0,80));
-      const html = `
-<!DOCTYPE html><html><head><meta charset="utf-8">
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>Print Label</title>
 <style>
   @page{size:auto;margin:0.25in}
@@ -239,10 +238,10 @@
     <img class="qr" src="${dataUrl}" alt="QR">
     <div class="txt">${labelText}</div>
   </div>
-  <script>window.onload=function(){window.print();};</script>
 </body></html>`;
       const w = window.open('', '_blank');
       w.document.open(); w.document.write(html); w.document.close();
+      w.onload = function(){ try{ w.focus(); w.print(); }catch(e){} };
     });
 
     function getQrDataUrl(node){
